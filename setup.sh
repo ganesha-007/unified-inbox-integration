@@ -1,213 +1,147 @@
 #!/bin/bash
 
-# Unified Messaging Platform Setup Script
-# This script sets up the development environment for the unified messaging platform
+# WhatsApp Messaging Application Setup Script
+# This script automates the setup process for the client
 
-set -e
-
-echo "🚀 Setting up Unified Messaging Platform..."
+echo "🚀 Setting up WhatsApp Messaging Application..."
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Function to print colored output
 print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}✅ $1${NC}"
 }
 
 print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "${YELLOW}⚠️  $1${NC}"
 }
 
 print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}❌ $1${NC}"
 }
 
-# Check if required tools are installed
-check_requirements() {
-    print_status "Checking requirements..."
-    
-    # Check Node.js
-    if ! command -v node &> /dev/null; then
-        print_error "Node.js is not installed. Please install Node.js 18+ and try again."
+# Check if Node.js is installed
+check_nodejs() {
+    if command -v node &> /dev/null; then
+        NODE_VERSION=$(node --version)
+        print_status "Node.js is installed: $NODE_VERSION"
+    else
+        print_error "Node.js is not installed. Please install Node.js from https://nodejs.org/"
         exit 1
     fi
-    
-    NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-    if [ "$NODE_VERSION" -lt 18 ]; then
-        print_error "Node.js version 18+ is required. Current version: $(node -v)"
+}
+
+# Check if npm is installed
+check_npm() {
+    if command -v npm &> /dev/null; then
+        NPM_VERSION=$(npm --version)
+        print_status "npm is installed: $NPM_VERSION"
+    else
+        print_error "npm is not installed. Please install npm."
         exit 1
     fi
-    
-    # Check npm
-    if ! command -v npm &> /dev/null; then
-        print_error "npm is not installed. Please install npm and try again."
-        exit 1
+}
+
+# Check if PostgreSQL is running
+check_postgresql() {
+    if command -v psql &> /dev/null; then
+        print_status "PostgreSQL is installed"
+        
+        # Try to connect to PostgreSQL
+        if psql -U postgres -c "SELECT 1;" &> /dev/null; then
+            print_status "PostgreSQL is running and accessible"
+        else
+            print_warning "PostgreSQL is installed but not accessible. Please start PostgreSQL service."
+            print_warning "On macOS: brew services start postgresql"
+            print_warning "On Ubuntu: sudo systemctl start postgresql"
+        fi
+    else
+        print_warning "PostgreSQL is not installed. Please install PostgreSQL or use Docker."
     fi
-    
-    # Check PostgreSQL
-    if ! command -v psql &> /dev/null; then
-        print_warning "PostgreSQL is not installed. Please install PostgreSQL 13+ and try again."
-        print_warning "You can install it using: brew install postgresql (macOS) or apt-get install postgresql (Ubuntu)"
-    fi
-    
-    # Check Redis
-    if ! command -v redis-server &> /dev/null; then
-        print_warning "Redis is not installed. Please install Redis 6+ and try again."
-        print_warning "You can install it using: brew install redis (macOS) or apt-get install redis-server (Ubuntu)"
-    fi
-    
-    print_success "Requirements check completed"
 }
 
 # Install backend dependencies
-setup_backend() {
-    print_status "Setting up backend..."
-    
-    cd backend
-    
-    # Install dependencies
+install_backend_deps() {
     print_status "Installing backend dependencies..."
+    cd backend
     npm install
-    
-    # Copy environment file
-    if [ ! -f .env ]; then
-        print_status "Creating environment file..."
-        cp config.example.env .env
-        print_warning "Please edit backend/.env with your configuration"
+    if [ $? -eq 0 ]; then
+        print_status "Backend dependencies installed successfully"
+    else
+        print_error "Failed to install backend dependencies"
+        exit 1
     fi
-    
-    # Create necessary directories
-    mkdir -p uploads logs
-    
     cd ..
-    print_success "Backend setup completed"
 }
 
 # Install frontend dependencies
-setup_frontend() {
-    print_status "Setting up frontend..."
-    
-    cd client
-    
-    # Install dependencies
+install_frontend_deps() {
     print_status "Installing frontend dependencies..."
+    cd client
     npm install
-    
+    if [ $? -eq 0 ]; then
+        print_status "Frontend dependencies installed successfully"
+    else
+        print_error "Failed to install frontend dependencies"
+        exit 1
+    fi
     cd ..
-    print_success "Frontend setup completed"
 }
 
-# Setup database
-setup_database() {
-    print_status "Setting up database..."
-    
-    # Check if PostgreSQL is running
-    if ! pg_isready -q; then
-        print_warning "PostgreSQL is not running. Please start PostgreSQL and try again."
-        print_warning "You can start it using: brew services start postgresql (macOS) or systemctl start postgresql (Ubuntu)"
-        return
+# Create .env file if it doesn't exist
+create_env_file() {
+    if [ ! -f "backend/.env" ]; then
+        print_status "Creating .env file from template..."
+        cp backend/config.example.env backend/.env
+        print_warning "Please edit backend/.env file with your actual configuration values"
+    else
+        print_status ".env file already exists"
     fi
-    
-    # Create database
+}
+
+# Create database
+create_database() {
     print_status "Creating database..."
-    createdb unified_inbox 2>/dev/null || print_warning "Database 'unified_inbox' might already exist"
-    
-    print_success "Database setup completed"
-}
-
-# Setup Redis
-setup_redis() {
-    print_status "Setting up Redis..."
-    
-    # Check if Redis is running
-    if ! redis-cli ping &> /dev/null; then
-        print_warning "Redis is not running. Please start Redis and try again."
-        print_warning "You can start it using: brew services start redis (macOS) or systemctl start redis-server (Ubuntu)"
-        return
+    if command -v psql &> /dev/null; then
+        psql -U postgres -c "CREATE DATABASE unified_inbox;" 2>/dev/null || print_warning "Database might already exist"
+        print_status "Database setup completed"
+    else
+        print_warning "Skipping database creation - PostgreSQL not accessible"
     fi
-    
-    print_success "Redis setup completed"
-}
-
-# Create Docker setup
-setup_docker() {
-    print_status "Setting up Docker configuration..."
-    
-    # Check if Docker is installed
-    if ! command -v docker &> /dev/null; then
-        print_warning "Docker is not installed. Skipping Docker setup."
-        return
-    fi
-    
-    # Check if Docker Compose is installed
-    if ! command -v docker-compose &> /dev/null; then
-        print_warning "Docker Compose is not installed. Skipping Docker setup."
-        return
-    fi
-    
-    print_success "Docker configuration is ready"
-    print_status "You can run 'docker-compose up -d' to start the application with Docker"
 }
 
 # Main setup function
 main() {
-    echo "=========================================="
-    echo "  Unified Messaging Platform Setup"
-    echo "=========================================="
-    echo
+    echo "🔍 Checking prerequisites..."
+    check_nodejs
+    check_npm
+    check_postgresql
     
-    check_requirements
-    echo
+    echo ""
+    echo "📦 Installing dependencies..."
+    install_backend_deps
+    install_frontend_deps
     
-    setup_backend
-    echo
+    echo ""
+    echo "⚙️  Setting up configuration..."
+    create_env_file
+    create_database
     
-    setup_frontend
-    echo
-    
-    setup_database
-    echo
-    
-    setup_redis
-    echo
-    
-    setup_docker
-    echo
-    
-    echo "=========================================="
-    print_success "Setup completed successfully!"
-    echo "=========================================="
-    echo
-    print_status "Next steps:"
-    echo "1. Edit backend/.env with your API keys and configuration"
-    echo "2. Start PostgreSQL and Redis services"
-    echo "3. Run 'cd backend && npm run dev' to start the backend"
-    echo "4. Run 'cd client && npm start' to start the frontend"
-    echo "5. Open http://localhost:3001 in your browser"
-    echo
-    print_status "For Docker deployment:"
-    echo "1. Configure environment variables in docker-compose.yml"
-    echo "2. Run 'docker-compose up -d'"
-    echo
-    print_status "API Documentation:"
-    echo "- Import postman/Unified-Messaging-API.postman_collection.json into Postman"
-    echo "- API base URL: http://localhost:5001"
-    echo
-    print_warning "Don't forget to:"
-    echo "- Set up your UniPile API account"
-    echo "- Configure Gmail and Microsoft Graph APIs"
-    echo "- Set up Stripe for billing"
-    echo "- Configure webhook endpoints"
+    echo ""
+    echo "🎉 Setup completed successfully!"
+    echo ""
+    echo "📋 Next steps:"
+    echo "1. Edit backend/.env file with your actual configuration"
+    echo "2. Start backend: cd backend && node server-working.js"
+    echo "3. Start frontend: cd client && npm start"
+    echo "4. Open http://localhost:3001 in your browser"
+    echo ""
+    echo "📖 For detailed instructions, see CLIENT_SETUP_GUIDE.md"
 }
 
 # Run main function
-main "$@"
+main
