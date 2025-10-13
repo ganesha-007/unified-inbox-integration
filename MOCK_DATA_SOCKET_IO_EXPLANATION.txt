@@ -1,0 +1,509 @@
+UNIFIED INBOX - MOCK DATA & SOCKET.IO IMPLEMENTATION EXPLANATION
+================================================================
+
+This document explains how the mock data system works with Socket.io to simulate
+real-time messages from WhatsApp, Instagram, and Email platforms.
+
+## OVERVIEW
+===========
+
+The system simulates a unified inbox by:
+1. Creating realistic mock messages from different platforms
+2. Using Socket.io for real-time message delivery
+3. Grouping messages into conversation threads
+4. Providing admin controls for testing
+
+## ARCHITECTURE
+==============
+
+### Backend Components:
+- MockMessageService: Generates and sends mock messages
+- Socket.io Server: Handles real-time communication
+- Message Model: Stores normalized message data
+- Admin API Endpoints: Control mock data generation
+
+### Frontend Components:
+- AdminPanel: Interface for controlling mock data
+- UnifiedInbox: Displays conversation threads
+- SocketService: Manages real-time connections
+- AuthContext: Handles user authentication
+
+## MOCK DATA GENERATION
+======================
+
+### 1. Message Templates
+Located in: backend/services/MockMessageService.js
+
+The system uses predefined templates for each platform:
+
+#### WhatsApp Templates:
+```javascript
+{
+  platform: 'whatsapp',
+  sender: {
+    name: 'John Doe',
+    id: '+1234567890',
+    phone: '+1234567890'
+  },
+  content: {
+    text: 'Hey! How are you doing?',
+    subject: null
+  },
+  avatar: 'https://via.placeholder.com/40/25D366/FFFFFF?text=JD'
+}
+```
+
+#### Instagram Templates:
+```javascript
+{
+  platform: 'instagram',
+  sender: {
+    name: 'Emma Stone',
+    id: 'emma_stone_ig',
+    email: 'emma@example.com'
+  },
+  content: {
+    text: 'Love your latest post! 🔥 The sunset photos are stunning.',
+    subject: null
+  },
+  avatar: 'https://via.placeholder.com/40/E4405F/FFFFFF?text=ES'
+}
+```
+
+#### Email Templates:
+```javascript
+{
+  platform: 'email',
+  sender: {
+    name: 'Newsletter Team',
+    id: 'noreply@company.com',
+    email: 'noreply@company.com'
+  },
+  content: {
+    text: 'Here are this week\'s updates from our team.',
+    subject: 'Weekly Newsletter - New Features Coming Soon'
+  },
+  avatar: 'https://via.placeholder.com/40/4285F4/FFFFFF?text=NL'
+}
+```
+
+### 2. Message Normalization
+All messages are normalized to a consistent format:
+
+```javascript
+{
+  id: 'platform_mock_timestamp',
+  platform: 'whatsapp|instagram|email',
+  sender: { name, id, email/phone },
+  recipient: { name, id },
+  content: { text, subject },
+  timestamp: Date,
+  read: false,
+  avatar: 'placeholder_url',
+  threadId: 'platform_thread_timestamp',
+  parentMessageId: null,
+  isReply: false,
+  replyCount: 0,
+  platformMetadata: { /* platform-specific data */ },
+  syncStatus: 'synced',
+  userId: 'user_id',
+  deleted: false
+}
+```
+
+## SOCKET.IO IMPLEMENTATION
+==========================
+
+### 1. Backend Socket.io Setup
+Located in: backend/server.js
+
+```javascript
+const io = socketIo(server, {
+  cors: {
+    origin: ['http://localhost:3001', 'http://localhost:3002'],
+    credentials: true,
+  },
+});
+
+// Authentication middleware
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (token) {
+    const decoded = jwt.verify(token, config.jwt.secret);
+    socket.userId = decoded.userId;
+    next();
+  } else {
+    next(new Error('Authentication error'));
+  }
+});
+```
+
+### 2. Socket Events
+
+#### Connection Event:
+```javascript
+io.on('connection', (socket) => {
+  console.log(`User ${socket.userId} connected`);
+  socket.join(`user_${socket.userId}`);
+  
+  // Handle message sending
+  socket.on('send_message', async (data) => {
+    // Process and save message
+    // Emit real-time updates
+  });
+});
+```
+
+#### Message Sending Event:
+```javascript
+socket.on('send_message', async (data) => {
+  const { platform, content, threadId, recipient } = data;
+  
+  const messageData = {
+    id: Date.now().toString(),
+    platform,
+    sender: { name: 'You', id: socket.userId },
+    recipient,
+    content,
+    timestamp: new Date(),
+    threadId: threadId || `thread_${Date.now()}`,
+    parentMessageId: threadId ? threadId : null,
+    isReply: !!threadId,
+    userId: socket.userId,
+  };
+
+  const message = new Message(messageData);
+  await message.save();
+  
+  // Emit to user's room
+  socket.to(`user_${socket.userId}`).emit('new_message', message);
+  socket.emit('message_sent', message);
+});
+```
+
+### 3. Mock Message Broadcasting
+Located in: backend/services/MockMessageService.js
+
+```javascript
+async sendRandomMockMessage() {
+  // Get random template
+  const template = this.messageTemplates[Math.floor(Math.random() * this.messageTemplates.length)];
+  
+  // Create message data
+  const messageData = {
+    id: `${template.platform}_mock_${Date.now()}`,
+    platform: template.platform,
+    sender: template.sender,
+    content: template.content,
+    timestamp: new Date(),
+    threadId: `${template.platform}_thread_${Date.now()}`,
+    userId: user._id,
+    // ... other fields
+  };
+
+  const message = new Message(messageData);
+  await message.save();
+
+  // Emit real-time update to all connected clients
+  this.io.emit('new_message', message);
+}
+```
+
+## FRONTEND SOCKET.IO INTEGRATION
+=================================
+
+### 1. Socket Service
+Located in: client/src/services/socketService.js
+
+```javascript
+import { io } from 'socket.io-client';
+
+class SocketService {
+  constructor() {
+    this.socket = null;
+  }
+
+  connect(token) {
+    this.socket = io('http://localhost:5001', {
+      auth: { token }
+    });
+  }
+
+  sendMessage(data) {
+    if (this.socket) {
+      this.socket.emit('send_message', data);
+    }
+  }
+
+  on(event, callback) {
+    if (this.socket) {
+      this.socket.on(event, callback);
+    }
+  }
+
+  off(event, callback) {
+    if (this.socket) {
+      this.socket.off(event, callback);
+    }
+  }
+}
+```
+
+### 2. Real-time Event Handling
+Located in: client/src/components/UnifiedInbox.js
+
+```javascript
+useEffect(() => {
+  if (token) {
+    socketService.connect(token);
+    
+    // Listen for new messages
+    socketService.on('new_message', (newMessage) => {
+      setMessages(prev => {
+        const exists = prev.find(msg => msg.id === newMessage.id);
+        if (!exists) {
+          return [newMessage, ...prev];
+        }
+        return prev;
+      });
+    });
+
+    // Listen for sent messages
+    socketService.on('message_sent', (sentMessage) => {
+      setMessages(prev => [sentMessage, ...prev]);
+    });
+
+    // Listen for typing indicators
+    socketService.on('user_typing', (data) => {
+      setTypingUsers(prev => ({
+        ...prev,
+        [data.threadId]: data.userId
+      }));
+    });
+  }
+}, [token]);
+```
+
+## ADMIN PANEL CONTROLS
+======================
+
+### 1. Mock Data Seeding
+Located in: client/src/components/AdminPanel.js
+
+```javascript
+const seedMockData = async () => {
+  const response = await axios.post('/api/admin/seed-mock-data');
+  message.success('Mock data seeded successfully!');
+  await fetchMockDataStatus();
+};
+```
+
+### 2. Individual Message Sending
+```javascript
+const sendMockMessage = async () => {
+  await axios.post('/api/admin/send-mock-message', { 
+    platform: selectedPlatform 
+  });
+  message.success(`Mock ${selectedPlatform} message sent!`);
+};
+```
+
+### 3. Automated Service
+```javascript
+const toggleMockService = async (action) => {
+  await axios.post(`/api/admin/mock-service/${action}`, { 
+    intervalMinutes 
+  });
+  setServiceRunning(action === 'start');
+};
+```
+
+## CONVERSATION THREADING
+========================
+
+### 1. Message Grouping
+Located in: client/src/components/UnifiedInbox.js
+
+```javascript
+const groupMessagesByThread = (messageList) => {
+  const threadMap = new Map();
+  
+  messageList.forEach(msg => {
+    const threadId = msg.threadId || msg.id;
+    if (!threadMap.has(threadId)) {
+      threadMap.set(threadId, {
+        threadId,
+        platform: msg.platform,
+        messages: [],
+        latestMessage: msg,
+        unreadCount: 0
+      });
+    }
+    
+    const thread = threadMap.get(threadId);
+    thread.messages.push(msg);
+    
+    // Update latest message if newer
+    if (new Date(msg.timestamp) > new Date(thread.latestMessage.timestamp)) {
+      thread.latestMessage = msg;
+    }
+    
+    // Count unread messages
+    if (!msg.read) {
+      thread.unreadCount++;
+    }
+  });
+  
+  return Array.from(threadMap.values());
+};
+```
+
+### 2. Reply Threading
+When a user replies to a message:
+
+```javascript
+const handleReply = async (values) => {
+  const replyData = {
+    platform: replyingTo.platform,
+    content: { text: values.message, subject: values.subject },
+    threadId: replyingTo.threadId, // Same thread ID
+    recipient: { name: replyingTo.sender.name, id: replyingTo.sender.id }
+  };
+  
+  socketService.sendMessage(replyData);
+};
+```
+
+## API ENDPOINTS
+===============
+
+### 1. Mock Data Management
+- POST /api/admin/seed-mock-data - Populate database with sample messages
+- GET /api/admin/mock-data-status - Get current message statistics
+- POST /api/admin/send-mock-message - Send individual mock message
+- POST /api/admin/mock-service/start - Start automated message service
+- POST /api/admin/mock-service/stop - Stop automated message service
+
+### 2. Message Operations
+- GET /api/messages - Fetch user messages
+- POST /api/messages/send - Send new message
+- PUT /api/messages/:id/read - Mark message as read
+- GET /api/messages/unread-count - Get unread message count
+
+## REAL-TIME FLOW
+================
+
+### 1. Mock Message Generation:
+1. Admin triggers mock message (manual or automated)
+2. MockMessageService selects random template
+3. Message data is created with proper normalization
+4. Message is saved to MongoDB
+5. Socket.io emits 'new_message' event to all clients
+6. Frontend receives event and updates UI
+
+### 2. User Reply Flow:
+1. User clicks "Reply" on a message
+2. Reply form opens with thread context
+3. User types message and submits
+4. Frontend sends 'send_message' event via Socket.io
+5. Backend processes message and saves to database
+6. Backend emits 'message_sent' event
+7. Frontend updates UI with new message in same thread
+
+### 3. Conversation Threading:
+1. Initial message creates new threadId
+2. Replies use same threadId to maintain conversation
+3. Frontend groups messages by threadId
+4. UI displays conversation threads with message history
+5. Unread counts are tracked per thread
+
+## PLATFORM-SPECIFIC FEATURES
+=============================
+
+### WhatsApp:
+- Phone number-based sender identification
+- Green color scheme (#25D366)
+- No subject field
+- Group chat support (future)
+
+### Instagram:
+- Username-based sender identification
+- Pink color scheme (#E4405F)
+- Story and post integration (future)
+- Media message support (future)
+
+### Email:
+- Email address-based sender identification
+- Blue color scheme (#4285F4)
+- Subject field support
+- Attachment support (future)
+
+## TESTING THE SYSTEM
+====================
+
+### 1. Initial Setup:
+1. Start backend server (npm start in backend/)
+2. Start frontend (npm start in client/)
+3. Register/login to create user account
+4. Access Admin Panel from header
+
+### 2. Mock Data Testing:
+1. Click "Seed Mock Data" to populate inbox
+2. View conversation threads in main inbox
+3. Click "Reply" on any message
+4. Send reply and see it appear in same thread
+5. Use "Send Mock Message" for individual messages
+6. Start automated service for continuous messages
+
+### 3. Real-time Testing:
+1. Open multiple browser tabs/windows
+2. Send messages from one tab
+3. See messages appear instantly in other tabs
+4. Test typing indicators
+5. Verify unread counts update in real-time
+
+## TECHNICAL DETAILS
+===================
+
+### Socket.io Configuration:
+- CORS enabled for localhost:3001 and localhost:3002
+- JWT authentication for socket connections
+- User-specific rooms for targeted messaging
+- Error handling for connection issues
+
+### Database Schema:
+- Messages collection with normalized structure
+- User association for multi-user support
+- Thread-based organization
+- Platform metadata storage
+
+### Error Handling:
+- Connection retry logic
+- Authentication error handling
+- Message validation
+- Graceful degradation for offline scenarios
+
+## FUTURE ENHANCEMENTS
+=====================
+
+### Planned Features:
+1. Real platform integrations (WhatsApp Business API, Instagram API, Gmail API)
+2. Media message support (images, videos, files)
+3. Group chat functionality
+4. Message search and filtering
+5. Push notifications
+6. Message encryption
+7. Read receipts and delivery status
+8. Message scheduling
+9. Auto-reply functionality
+10. Analytics and reporting
+
+### Integration Points:
+- WhatsApp Business API for real WhatsApp messages
+- Instagram Basic Display API for Instagram messages
+- Gmail API for email integration
+- Microsoft Graph API for Outlook integration
+- Webhook endpoints for platform notifications
+
+This system provides a complete foundation for a unified inbox application with
+real-time messaging capabilities and proper conversation threading.

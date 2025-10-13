@@ -1,0 +1,474 @@
+{
+  "info": {
+    "name": "Unified Messaging API",
+    "description": "API collection for the Unified Messaging Platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5001",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"testuser\",\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\",\n  \"firstName\": \"Test\",\n  \"lastName\": \"User\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.collectionVariables.set('token', response.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "me"]
+            }
+          }
+        },
+        {
+          "name": "Get User Entitlements",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/entitlements",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "auth", "entitlements"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Channels",
+      "item": [
+        {
+          "name": "WhatsApp",
+          "item": [
+            {
+              "name": "Get WhatsApp Accounts",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/whatsapp/accounts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "whatsapp", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Connect WhatsApp Account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"credentials\": {\n    \"phoneNumber\": \"+1234567890\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/whatsapp/connect",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "whatsapp", "connect"]
+                }
+              }
+            },
+            {
+              "name": "Get WhatsApp Chats",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/whatsapp/:accountId/chats",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "whatsapp", ":accountId", "chats"],
+                  "variable": [
+                    {
+                      "key": "accountId",
+                      "value": "account-id-here"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get WhatsApp Messages",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/whatsapp/:accountId/chats/:chatId/messages",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "whatsapp", ":accountId", "chats", ":chatId", "messages"],
+                  "variable": [
+                    {
+                      "key": "accountId",
+                      "value": "account-id-here"
+                    },
+                    {
+                      "key": "chatId",
+                      "value": "chat-id-here"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Send WhatsApp Message",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"body\": \"Hello from WhatsApp!\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/whatsapp/:accountId/chats/:chatId/send",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "whatsapp", ":accountId", "chats", ":chatId", "send"],
+                  "variable": [
+                    {
+                      "key": "accountId",
+                      "value": "account-id-here"
+                    },
+                    {
+                      "key": "chatId",
+                      "value": "chat-id-here"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Instagram",
+          "item": [
+            {
+              "name": "Get Instagram Accounts",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/instagram/accounts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "instagram", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Connect Instagram Account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"credentials\": {\n    \"username\": \"instagram_username\",\n    \"password\": \"instagram_password\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/instagram/connect",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "instagram", "connect"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Email",
+          "item": [
+            {
+              "name": "Get Email Accounts",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/email/accounts",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "email", "accounts"]
+                }
+              }
+            },
+            {
+              "name": "Connect Gmail Account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"credentials\": {\n    \"emailProvider\": \"gmail\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/email/connect",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "email", "connect"]
+                }
+              }
+            },
+            {
+              "name": "Connect Outlook Account",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"credentials\": {\n    \"emailProvider\": \"microsoft\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/email/connect",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "email", "connect"]
+                }
+              }
+            },
+            {
+              "name": "Send Email",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"to\": \"recipient@example.com\",\n  \"subject\": \"Test Email\",\n  \"body\": \"This is a test email from the unified messaging platform.\",\n  \"cc\": \"cc@example.com\",\n  \"bcc\": \"bcc@example.com\"\n}"
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/email/:accountId/chats/:chatId/send",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "email", ":accountId", "chats", ":chatId", "send"],
+                  "variable": [
+                    {
+                      "key": "accountId",
+                      "value": "account-id-here"
+                    },
+                    {
+                      "key": "chatId",
+                      "value": "chat-id-here"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Get Email Limits",
+              "request": {
+                "method": "GET",
+                "url": {
+                  "raw": "{{baseUrl}}/api/channels/email/:accountId/limits",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["api", "channels", "email", ":accountId", "limits"],
+                  "variable": [
+                    {
+                      "key": "accountId",
+                      "value": "account-id-here"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "item": [
+        {
+          "name": "UniPile Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-UniPile-Signature",
+                "value": "webhook-signature-here"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"message.new\",\n  \"data\": {\n    \"connectionId\": \"conn-123\",\n    \"message\": {\n      \"id\": \"msg-123\",\n      \"direction\": \"in\",\n      \"content\": {\n        \"text\": \"Hello from webhook!\"\n      },\n      \"timestamp\": \"2025-01-08T10:00:00Z\",\n      \"chat_id\": \"chat-123\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/webhooks/unipile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "webhooks", "unipile"]
+            }
+          }
+        },
+        {
+          "name": "Email Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Signature",
+                "value": "webhook-signature-here"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"gmail\",\n  \"event\": \"message.received\",\n  \"data\": {\n    \"messageId\": \"msg-123\",\n    \"accountId\": \"acc-123\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/webhooks/email",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "webhooks", "email"]
+            }
+          }
+        },
+        {
+          "name": "Stripe Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Stripe-Signature",
+                "value": "stripe-signature-here"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"customer_email\": \"test@example.com\",\n      \"metadata\": {\n        \"addon\": \"whatsapp\"\n      }\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/webhooks/stripe",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "webhooks", "stripe"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Get Pricing Config",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/pricing-config",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "pricing-config"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "health"]
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+
+Unified Messaging Normalization & Extensibility (UniPile, Gmail, Microsoft Graph)
+
+Purpose
+This document explains the data normalization strategy used across messaging providers (WhatsApp, Instagram, Gmail, Outlook), ensuring a consistent and scalable integration model. It also outlines how to extend the system to support additional providers via UniPile or native APIs like Gmail and Microsoft Graph.
+
+Background
+The system integrates multiple communication channels — WhatsApp, Instagram, and Email — into a single SaaS messaging platform. Each provider has its own data structures, APIs, and authentication models. Normalization unifies this into one consistent data model for messages, chats, and accounts.
+
+Core Normalization Concept
+Each provider returns different field names, hierarchies, and metadata. The backend transforms every message into a shared normalized object, ensuring a unified data structure.
+
+Normalized Data Models
+A unified schema for Account, Chat, and Message objects ensures data consistency across all providers.
+
+Normalization Pipeline
+The pipeline fetches provider data via UniPile or APIs, normalizes it, and stores unified records in PostgreSQL. Normalizers are provider-specific adapters that map raw data to the shared schema.
+
+Extending to New Providers
+Adding a new provider involves creating a new adapter with standard methods (connect, listChats, listMessages, sendMessage, handleWebhook). The unified frontend automatically supports new providers.
+
+Entitlement Integration
+Every message request passes through entitlement checks to verify user plan permissions before accessing any provider’s data.
+
+Gmail & Microsoft Graph Specific Notes
+Both use OAuth 2.0 authentication, with tokens stored securely and refreshed automatically. Incoming messages are handled via Pub/Sub or Graph Subscriptions and normalized via unified endpoints.
+
+Advantages of Normalization
+Unified frontend and backend, easier QA, scalability, extensibility, and simplified maintenance.
+
+Future-Proofing Recommendations
+Introduce provider plugins, versioned normalizers, AI assistant hooks, and a unified search index for cross-channel operations.
+
+Summary
+Normalization ensures all connected channels adhere to a unified contract for messages, chats, and accounts. This design simplifies UX and allows effortless integration of future channels like Telegram or Facebook.
