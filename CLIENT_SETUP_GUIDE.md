@@ -2,14 +2,19 @@
 
 ## ⚡ **Quick Start (TL;DR)**
 ```bash
-git clone <your-repository-url>
-cd upwork
+git clone https://github.com/ganesha-007/unified-inbox-integration.git
+cd unified-inbox-integration
 ./setup.sh
 # Edit backend/.env with your UniPile credentials
-cd backend && node server.js
+cd backend && node server-working.js
 # In another terminal: cd client && npm start
 # Open http://localhost:3001
 ```
+
+> **📚 Documentation Files:**
+> - `PROJECT_DELIVERY.md` - Complete project overview and features
+> - `DEPLOYMENT_CHECKLIST.md` - Step-by-step deployment checklist
+> - `README.md` - Quick reference guide
 
 ## 📋 **Prerequisites**
 
@@ -40,8 +45,8 @@ Before setting up the application, ensure you have the following installed on yo
 
 ### **Option A: Quick Setup (Recommended)**
 ```bash
-git clone <your-repository-url>
-cd upwork
+git clone https://github.com/ganesha-007/unified-inbox-integration.git
+cd unified-inbox-integration
 ./setup.sh
 ```
 The automated setup script will handle everything for you!
@@ -50,8 +55,8 @@ The automated setup script will handle everything for you!
 
 ### **Step 1: Clone the Repository**
 ```bash
-git clone <your-repository-url>
-cd upwork
+git clone https://github.com/ganesha-007/unified-inbox-integration.git
+cd unified-inbox-integration
 ```
 
 ### **Step 2: Backend Setup**
@@ -151,8 +156,10 @@ npm install
 ```bash
 # In terminal 1
 cd backend
-node server.js
+node server-working.js
 ```
+
+> **📝 Note:** We use `server-working.js` which is the stable, tested version of the server with all WhatsApp functionality working correctly.
 
 **Expected Output:**
 ```
@@ -188,6 +195,18 @@ Open your browser and navigate to: **http://localhost:3001**
 - Right panel for conversations
 - Dark theme matching WhatsApp
 - Real-time messaging capabilities
+
+### **🎯 Application Features**
+Once the application is running, you'll have access to:
+
+- **📱 WhatsApp Integration**: Send and receive WhatsApp messages
+- **💬 Real-time Messaging**: Messages appear instantly without refresh
+- **🔄 Message Persistence**: All messages are saved and persist across sessions
+- **↩️ Reply Functionality**: Reply to any incoming message
+- **👥 Multiple Conversations**: Manage multiple chat conversations
+- **🎨 WhatsApp-like UI**: Authentic WhatsApp Web interface
+- **📊 Message History**: View complete conversation history
+- **🔍 Search & Filter**: Find conversations easily
 
 ---
 
