@@ -21,37 +21,70 @@ const WhatsAppInbox = () => {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    // Clear all messages from Redux state
-    dispatch(clearMessages());
-    
-    // Load messages from backend
+    // Load messages from backend and localStorage
+    // Don't clear messages first - let loadMessages handle merging
     dispatch(loadMessages());
 
-    // Connect to Socket.io
-    const socket = io('http://localhost:5001');
+        // Connect to Socket.io - simplified
+        console.log('🔌 Attempting to connect to Socket.io...');
+        const socket = io('http://localhost:5001', {
+          transports: ['websocket', 'polling'],
+          forceNew: true,
+          auth: {
+            token: null // No token for testing
+          }
+        });
     dispatch(setSocketInstance(socket));
 
     socket.on('connect', () => {
-      console.log('Connected to server');
+      console.log('✅ Socket.io connected successfully!', socket.id);
       dispatch(setConnectionStatus(true));
     });
 
     socket.on('disconnect', () => {
-      console.log('Disconnected from server');
+      console.log('❌ Socket.io disconnected');
       dispatch(setConnectionStatus(false));
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('❌ Socket.io connection error:', error);
+      dispatch(setConnectionStatus(false));
+    });
+
+    socket.on('test_message', (data) => {
+      console.log('🧪 Received test message:', data);
     });
 
     socket.on('new_message', (message) => {
       console.log('🔔 Frontend received new message:', message);
-      dispatch(addMessageWithPersistence({
-        id: message.id || Date.now(),
-        text: message.text,
-        from: message.from,
-        fromName: message.fromName || 'Unknown',
-        to: message.to,
-        timestamp: message.timestamp,
-        direction: 'in'
-      }));
+      console.log('🔔 Message direction:', message.direction);
+      console.log('🔔 Message fromName:', message.fromName);
+      
+      // Filter out test users and fake contacts in real-time
+      const fromName = message.fromName || 'Unknown';
+      const isRealContact = fromName !== 'Unknown' && 
+                           fromName !== 'Test User' && 
+                           !fromName.startsWith('Chat ') &&
+                           !fromName.includes('test') &&
+                           !fromName.includes('Test') &&
+                           !fromName.includes('github') &&
+                           !fromName.includes('frontend') &&
+                           fromName.length > 2;
+      
+      // Only add messages from real contacts or outgoing messages
+      if (isRealContact || message.direction === 'out') {
+        dispatch(addMessageWithPersistence({
+          id: message.id || Date.now(),
+          text: message.text,
+          from: message.from,
+          fromName: fromName,
+          to: message.to,
+          timestamp: message.timestamp,
+          direction: message.direction || 'in'
+        }));
+      } else {
+        console.log('🚫 Filtered out test/fake message from:', fromName);
+      }
     });
 
     socket.on('message_sent', (message) => {
@@ -80,7 +113,18 @@ const WhatsAppInbox = () => {
       }
     }
     
-    const targetRecipient = replyingTo ? replyingTo.from : (selectedChat ? selectedChat.id : '1234567890');
+    // Determine the correct recipient
+    let targetRecipient;
+    if (replyingTo) {
+      // When replying, use the sender's phone number
+      targetRecipient = replyingTo.from;
+    } else if (selectedChat) {
+      // When sending to selected chat, use the chat ID (which is the phone number)
+      targetRecipient = selectedChat.id;
+    } else {
+      // Fallback
+      targetRecipient = '1234567890';
+    }
     
     // Clear the input immediately for better UX
     setNewMessage('');
@@ -98,7 +142,8 @@ const WhatsAppInbox = () => {
         },
         body: JSON.stringify({
           to: targetRecipient,
-          message: messageText,
+          text: messageText,
+          fromName: 'You',
           replyTo: replyingTo ? replyingTo.id : null
         }),
       });
@@ -106,18 +151,7 @@ const WhatsAppInbox = () => {
       const result = await response.json();
       
       if (result.success) {
-        // Add the sent message to the Redux store with persistence
-        dispatch(addMessageWithPersistence({
-          id: result.data.id,
-          text: result.data.text,
-          from: result.data.from,
-          to: result.data.to,
-          fromName: 'You',
-          timestamp: result.data.timestamp,
-          direction: 'out',
-          replyTo: result.data.replyTo
-        }));
-        
+        // Don't add sent messages to the frontend - user doesn't want to see their own messages
         antdMessage.destroy();
         antdMessage.success(`Message sent to ${replyingTo ? replyingTo.fromName : (selectedChat ? selectedChat.name : 'recipient')}!`);
       } else {
@@ -139,6 +173,14 @@ const WhatsAppInbox = () => {
   const handleReply = (message) => {
     dispatch(setReplyingTo(message));
     setNewMessage(''); // Don't include the reply prefix in the input
+    
+    // Auto-select the chat for this message (only for incoming messages)
+    if (message.direction === 'in' && message.fromName !== 'You') {
+      const chatForMessage = chats.find(chat => chat.id === message.from);
+      if (chatForMessage) {
+        setSelectedChat(chatForMessage);
+      }
+    }
   };
 
   const cancelReply = () => {
@@ -153,55 +195,75 @@ const WhatsAppInbox = () => {
     }
   };
 
-  // Group messages by chat (sender) - only show chats from incoming messages
+  // Group messages by chat (phone number) - only show chats from real WhatsApp contacts
   const groupMessagesByChat = (messages) => {
     const chats = {};
     messages.forEach(message => {
-      // Only create chat entries for incoming messages (from other people)
-      // Filter out 'You' messages from chat list
-      if (message.direction === 'in' && message.fromName !== 'You') {
+      // Only create chat entries for incoming messages from real WhatsApp contacts
+      // Filter out test users, empty users, and fake contacts
+      if (message.direction === 'in' && 
+          message.fromName !== 'You' && 
+          message.fromName && 
+          message.fromName !== 'Unknown' && 
+          message.fromName !== 'Test User' && 
+          !message.fromName.startsWith('Chat ') &&
+          !message.fromName.includes('test') &&
+          !message.fromName.includes('Test') &&
+          !message.fromName.includes('github') &&
+          !message.fromName.includes('frontend') &&
+          message.fromName.length > 2) { // Ensure name has substance
+        
         const chatKey = message.from;
+        const chatName = message.fromName;
+        
         if (!chats[chatKey]) {
           chats[chatKey] = {
             id: chatKey,
-            name: message.fromName,
+            name: chatName,
             lastMessage: message.text,
             lastMessageTime: message.timestamp,
             unreadCount: 0,
             messages: []
           };
         }
+        
         chats[chatKey].messages.push(message);
         chats[chatKey].lastMessage = message.text;
         chats[chatKey].lastMessageTime = message.timestamp;
         chats[chatKey].unreadCount++;
-      } else if (message.direction === 'out' && message.fromName !== 'You') {
-        // For outgoing messages (not from 'You'), add them to the existing chat if it exists
-        const chatKey = message.to;
-        if (chats[chatKey]) {
-          chats[chatKey].messages.push(message);
-          // Update last message time if this is more recent
-          if (new Date(message.timestamp) > new Date(chats[chatKey].lastMessageTime)) {
-            chats[chatKey].lastMessage = message.text;
-            chats[chatKey].lastMessageTime = message.timestamp;
-          }
-        }
       }
     });
+    
     return Object.values(chats).sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
   };
 
-  // Get messages for selected chat
+  // Get messages for selected chat - show both incoming and outgoing messages
   const getSelectedChatMessages = () => {
     if (!selectedChat) return [];
-    return messages.filter(msg => 
-      (msg.direction === 'in' && msg.from === selectedChat.id) ||
-      (msg.direction === 'out' && msg.to === selectedChat.id)
-    ).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    console.log('🔍 Filtering messages for chat:', selectedChat.id);
+    console.log('🔍 All messages:', messages);
+    
+    const filteredMessages = messages.filter(msg => {
+      const isIncoming = msg.direction === 'in' && msg.from === selectedChat.id && msg.fromName !== 'You';
+      const isOutgoing = msg.direction === 'out' && msg.to === selectedChat.id;
+      
+      console.log(`🔍 Message ${msg.id}: direction=${msg.direction}, from=${msg.from}, to=${msg.to}, fromName=${msg.fromName}, isIncoming=${isIncoming}, isOutgoing=${isOutgoing}`);
+      
+      return isIncoming || isOutgoing;
+    }).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    
+    console.log('🔍 Filtered messages:', filteredMessages);
+    return filteredMessages;
   };
 
   const chats = groupMessagesByChat(messages);
   const selectedChatMessages = getSelectedChatMessages();
+
+  // Handle chat selection
+  const handleChatSelect = (chat) => {
+    setSelectedChat(chat);
+    dispatch(clearReplyingTo()); // Clear any reply state when selecting a chat
+  };
 
   // Auto-select first chat if none selected
   useEffect(() => {
@@ -274,7 +336,7 @@ const WhatsAppInbox = () => {
               renderItem={(chat) => (
                 <List.Item
                   className={`chat-item ${selectedChat?.id === chat.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedChat(chat)}
+                  onClick={() => handleChatSelect(chat)}
                 >
                   <div className="chat-item-content">
                     <Avatar 
@@ -286,10 +348,13 @@ const WhatsAppInbox = () => {
                       <div className="chat-item-header">
                         <Text strong className="chat-name">{chat.name}</Text>
                         <Text className="chat-time">
-                          {new Date(chat.lastMessageTime).toLocaleTimeString([], { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
-                          })}
+                          {(() => {
+                            const date = new Date(chat.lastMessageTime);
+                            return isNaN(date.getTime()) ? '--:--' : date.toLocaleTimeString([], { 
+                              hour: '2-digit', 
+                              minute: '2-digit' 
+                            });
+                          })()}
                         </Text>
                       </div>
                       <div className="chat-item-footer">
@@ -356,10 +421,13 @@ const WhatsAppInbox = () => {
                         <div className="message-text">{msg.text}</div>
                         <div className="message-footer">
                           <div className="message-time">
-                            {new Date(msg.timestamp).toLocaleTimeString([], { 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })}
+                            {(() => {
+                              const date = new Date(msg.timestamp);
+                              return isNaN(date.getTime()) ? '--:--' : date.toLocaleTimeString([], { 
+                                hour: '2-digit', 
+                                minute: '2-digit' 
+                              });
+                            })()}
                           </div>
                           {msg.direction === 'in' && (
                             <Button

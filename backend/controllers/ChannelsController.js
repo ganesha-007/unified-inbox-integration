@@ -18,7 +18,7 @@ class ChannelsController {
   async getAccounts(req, res) {
     try {
       const { provider } = req.params;
-      const userId = req.user.id;
+      const userId = req.user.userId;
 
       // Check entitlement
       const hasAccess = await this.entitlementService.hasAccess(userId, provider);
@@ -54,7 +54,7 @@ class ChannelsController {
   async connectAccount(req, res) {
     try {
       const { provider } = req.params;
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const { credentials = {} } = req.body;
 
       // Check entitlement
@@ -148,7 +148,7 @@ class ChannelsController {
   async disconnectAccount(req, res) {
     try {
       const { provider, accountId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user.userId;
 
       const account = await ChannelAccount.findOne({
         where: { id: accountId, user_id: userId, provider },
@@ -176,12 +176,85 @@ class ChannelsController {
   }
 
   /**
+   * Force sync chats from provider
+   */
+  async syncChatsFromProvider(req, res) {
+    try {
+      const { provider, accountId } = req.params;
+      const userId = req.user.userId;
+
+      // Check entitlement
+      const hasAccess = await this.entitlementService.hasAccess(userId, provider);
+      if (!hasAccess) {
+        return res.status(403).json({ 
+          error: 'Access denied',
+          message: `You don't have access to ${provider}. Please upgrade your plan or purchase the add-on.`
+        });
+      }
+
+      const account = await ChannelAccount.findOne({
+        where: { id: accountId, user_id: userId, provider },
+      });
+
+      if (!account) {
+        return res.status(404).json({ error: 'Account not found' });
+      }
+
+      // Get chats from provider and sync
+      let providerChats;
+      if (provider === 'whatsapp' || provider === 'instagram') {
+        providerChats = await this.unipileService.getChats(
+          account.connection_data.connectionId,
+          100, // Get more chats for sync
+          0
+        );
+      } else if (provider === 'email') {
+        const messages = await this.emailService.getGmailMessages(
+          account.connection_data,
+          '',
+          100
+        );
+        providerChats = this.groupEmailMessagesIntoChats(messages);
+      }
+
+      // Sync with local database
+      const chats = await this.syncChats(account, providerChats);
+
+      // Filter out chats with own phone number (self-messages)
+      const ownPhoneNumber = process.env.WHATSAPP_ACCOUNT_NUMBER || '919566651479';
+      const hideOwnChats = process.env.HIDE_OWN_CHATS !== 'false'; // Default to true
+      const filteredChats = hideOwnChats ? chats.filter(chat => {
+        const chatPhoneNumber = chat.chat_info?.phone_number;
+        // Don't show chats with own phone number
+        return chatPhoneNumber !== ownPhoneNumber;
+      }) : chats;
+
+      res.json({
+        provider,
+        account_id: accountId,
+        chats: filteredChats.map(chat => ({
+          id: chat.id,
+          provider_chat_id: chat.provider_chat_id,
+          title: chat.title,
+          last_message_at: chat.last_message_at,
+          unread_count: chat.unread_count,
+          chat_info: chat.chat_info,
+        })),
+        message: `Synced ${filteredChats.length} chats from ${provider}`
+      });
+    } catch (error) {
+      console.error('Error syncing chats:', error);
+      res.status(500).json({ error: error.message });
+    }
+  }
+
+  /**
    * Get chats for an account
    */
   async getChats(req, res) {
     try {
       const { provider, accountId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const { limit = 50, offset = 0 } = req.query;
 
       // Check entitlement
@@ -201,31 +274,50 @@ class ChannelsController {
         return res.status(404).json({ error: 'Account not found' });
       }
 
-      // Get chats from provider
-      let providerChats;
-      if (provider === 'whatsapp' || provider === 'instagram') {
-        providerChats = await this.unipileService.getChats(
-          account.connection_data.connectionId,
-          limit,
-          offset
-        );
-      } else if (provider === 'email') {
-        // For email, we'll get messages and group them by thread
-        const messages = await this.emailService.getGmailMessages(
-          account.connection_data,
-          '',
-          limit
-        );
-        providerChats = this.groupEmailMessagesIntoChats(messages);
+      // Get chats directly from local database (consolidated)
+      let chats = await ChannelChat.findAll({
+        where: { account_id: accountId },
+        order: [['last_message_at', 'DESC']],
+        limit: parseInt(limit),
+        offset: parseInt(offset)
+      });
+
+      // If no local chats, try to sync from provider
+      if (chats.length === 0) {
+        let providerChats;
+        if (provider === 'whatsapp' || provider === 'instagram') {
+          providerChats = await this.unipileService.getChats(
+            account.connection_data.connectionId,
+            limit,
+            offset
+          );
+        } else if (provider === 'email') {
+          // For email, we'll get messages and group them by thread
+          const messages = await this.emailService.getGmailMessages(
+            account.connection_data,
+            '',
+            limit
+          );
+          providerChats = this.groupEmailMessagesIntoChats(messages);
+        }
+
+        // Sync with local database
+        chats = await this.syncChats(account, providerChats);
       }
 
-      // Sync with local database
-      const chats = await this.syncChats(account, providerChats);
+      // Filter out chats with own phone number (self-messages)
+      const ownPhoneNumber = process.env.WHATSAPP_ACCOUNT_NUMBER || '919566651479';
+      const hideOwnChats = process.env.HIDE_OWN_CHATS !== 'false'; // Default to true
+      const filteredChats = hideOwnChats ? chats.filter(chat => {
+        const chatPhoneNumber = chat.chat_info?.phone_number;
+        // Don't show chats with own phone number
+        return chatPhoneNumber !== ownPhoneNumber;
+      }) : chats;
 
       res.json({
         provider,
         account_id: accountId,
-        chats: chats.map(chat => ({
+        chats: filteredChats.map(chat => ({
           id: chat.id,
           provider_chat_id: chat.provider_chat_id,
           title: chat.title,
@@ -246,7 +338,7 @@ class ChannelsController {
   async getMessages(req, res) {
     try {
       const { provider, accountId, chatId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const { limit = 50, offset = 0 } = req.query;
 
       // Check entitlement
@@ -314,7 +406,7 @@ class ChannelsController {
   async sendMessage(req, res) {
     try {
       const { provider, accountId, chatId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const { body, subject, attachments = [] } = req.body;
 
       // Check entitlement
@@ -415,7 +507,7 @@ class ChannelsController {
   async markAsRead(req, res) {
     try {
       const { provider, accountId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user.userId;
       const { messageIds } = req.body;
 
       const account = await ChannelAccount.findOne({
@@ -454,7 +546,7 @@ class ChannelsController {
   async getEmailLimits(req, res) {
     try {
       const { accountId } = req.params;
-      const userId = req.user.id;
+      const userId = req.user.userId;
 
       const account = await ChannelAccount.findOne({
         where: { id: accountId, user_id: userId, provider: 'email' },
@@ -477,31 +569,92 @@ class ChannelsController {
    * Helper: Sync chats with local database
    */
   async syncChats(account, providerChats) {
+    // First, get all existing chats for this account to avoid duplicates
+    const existingChats = await ChannelChat.findAll({
+      where: { account_id: account.id }
+    });
+    
+    // Create a map of existing chats by phone number
+    const existingChatsByPhone = {};
+    existingChats.forEach(chat => {
+      const phoneNumber = chat.chat_info?.phone_number || 'unknown';
+      if (!existingChatsByPhone[phoneNumber]) {
+        existingChatsByPhone[phoneNumber] = chat;
+      }
+    });
+    
     const chats = [];
+    const processedPhoneNumbers = new Set();
     
     for (const providerChat of providerChats) {
       const normalizedChat = this.unipileService.normalizeChat(providerChat, account.provider);
       
-      const [chat, created] = await ChannelChat.findOrCreate({
-        where: {
-          account_id: account.id,
-          provider_chat_id: normalizedChat.provider_chat_id,
-        },
-        defaults: {
-          account_id: account.id,
-          ...normalizedChat,
-        },
-      });
-
-      if (!created) {
-        Object.assign(chat, normalizedChat);
+      // Extract phone number from chat participants or metadata
+      const phoneNumber = this.extractPhoneNumberFromChat(providerChat);
+      const uniqueChatId = `${phoneNumber}_${account.provider}`;
+      
+      // Skip if we've already processed this phone number
+      if (processedPhoneNumbers.has(phoneNumber)) {
+        console.log(`Skipping duplicate chat for phone number: ${phoneNumber}`);
+        continue;
+      }
+      
+      // Check if we already have a chat for this phone number
+      let chat = existingChatsByPhone[phoneNumber];
+      
+      if (chat) {
+        // Update existing chat with latest info
+        chat.title = normalizedChat.title;
+        chat.last_message_at = normalizedChat.last_message_at;
+        chat.chat_info = {
+          ...chat.chat_info,
+          ...normalizedChat.chat_info,
+          original_chat_id: normalizedChat.provider_chat_id,
+          phone_number: phoneNumber,
+        };
         await chat.save();
+      } else {
+        // Create new chat
+        chat = await ChannelChat.create({
+          account_id: account.id,
+          provider_chat_id: uniqueChatId,
+          title: normalizedChat.title,
+          last_message_at: normalizedChat.last_message_at,
+          chat_info: {
+            ...normalizedChat.chat_info,
+            original_chat_id: normalizedChat.provider_chat_id,
+            phone_number: phoneNumber,
+          },
+          unread_count: normalizedChat.unread_count,
+        });
       }
 
       chats.push(chat);
+      processedPhoneNumbers.add(phoneNumber);
     }
 
     return chats;
+  }
+
+  /**
+   * Extract phone number from chat data
+   */
+  extractPhoneNumberFromChat(chat) {
+    // Try to extract phone number from participants or metadata
+    if (chat.participants && chat.participants.length > 0) {
+      for (const participant of chat.participants) {
+        if (participant.phone || participant.id) {
+          const phoneNumber = participant.phone || participant.id;
+          const cleanPhone = phoneNumber.replace(/^whatsapp:/, '').replace(/^\+/, '').replace(/\D/g, '');
+          if (cleanPhone && cleanPhone.length >= 10) {
+            return cleanPhone;
+          }
+        }
+      }
+    }
+    
+    // Fallback to chat ID or name
+    return chat.id || chat.name || 'unknown';
   }
 
   /**

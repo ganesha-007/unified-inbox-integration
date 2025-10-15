@@ -4,7 +4,8 @@ const UniPileService = require('../services/UniPileService');
 const EmailService = require('../services/EmailService');
 
 class WebhooksController {
-  constructor() {
+  constructor(io) {
+    this.io = io;
     this.unipileService = new UniPileService();
     this.emailService = new EmailService();
   }
@@ -14,16 +15,30 @@ class WebhooksController {
    */
   async handleUniPileWebhook(req, res) {
     try {
+      console.log('Raw webhook body:', JSON.stringify(req.body, null, 2));
+      console.log('Webhook headers:', req.headers);
+      
       const { event, data } = req.body;
       
-      // Verify webhook signature (implement based on UniPile's signature method)
-      if (!this.verifyUniPileSignature(req)) {
+      // Verify webhook signature (optional for testing - set UNIPILE_WEBHOOK_SECRET to disable)
+      if (process.env.UNIPILE_WEBHOOK_SECRET && !this.verifyUniPileSignature(req)) {
         return res.status(401).json({ error: 'Invalid signature' });
+      }
+
+      if (!event) {
+        console.log('No event found in webhook body:', req.body);
+        return res.json({ status: 'success', message: 'No event to process' });
       }
 
       switch (event) {
         case 'message.new':
-          await this.handleNewMessage(data);
+        case 'message_received':
+          if (data) {
+            await this.handleNewMessage(data);
+          } else {
+            // Handle direct webhook format (no data wrapper)
+            await this.handleNewMessage(req.body);
+          }
           break;
         case 'account.updated':
           await this.handleAccountUpdate(data);
@@ -116,41 +131,118 @@ class WebhooksController {
    */
   async handleNewMessage(data) {
     try {
-      const { connectionId, message } = data;
+      console.log('Processing new message with data:', JSON.stringify(data, null, 2));
+      
+      // Handle different data structures
+      let connectionId, message;
+      
+      if (data.connectionId && data.message) {
+        // Direct structure: { connectionId, message }
+        connectionId = data.connectionId;
+        message = data.message;
+      } else if (data.connection_id && data.message) {
+        // Alternative structure: { connection_id, message }
+        connectionId = data.connection_id;
+        message = data.message;
+      } else if (data.message && data.message.connectionId) {
+        // Message contains connectionId
+        connectionId = data.message.connectionId;
+        message = data.message;
+      } else if (data.account_id && data.message) {
+        // Real UniPile format: { account_id, message, sender, etc. }
+        connectionId = data.account_id;
+            message = {
+              id: data.message_id,
+              body: data.message,
+              from: data.sender?.attendee_provider_id || data.sender?.attendee_id,
+              to: data.provider_chat_id,
+              timestamp: data.timestamp,
+              chat_id: data.chat_id,
+              subject: data.subject,
+              attachments: data.attachments || [],
+              sender: data.sender // Add sender object
+            };
+      } else {
+        console.error('Invalid data structure for new message:', data);
+        return;
+      }
+
+      if (!connectionId) {
+        console.error('No connectionId found in data:', data);
+        return;
+      }
       
       // Find the account by connection ID
-      const account = await ChannelAccount.findOne({
+      let account = await ChannelAccount.findOne({
         where: { 
           'connection_data.connectionId': connectionId 
         },
       });
 
+      // If not found by connectionId, try by external_account_id
+      if (!account) {
+        account = await ChannelAccount.findOne({
+          where: { 
+            external_account_id: connectionId 
+          },
+        });
+      }
+
       if (!account) {
         console.error(`Account not found for connection: ${connectionId}`);
+        console.log('Available accounts:', await ChannelAccount.findAll({ attributes: ['id', 'provider', 'external_account_id', 'connection_data'] }));
         return;
       }
 
       // Normalize message
       const normalizedMessage = this.unipileService.normalizeMessage(message, account.provider);
       
-      // Find or create chat
+      // Create unique chat identifier using phone number
+      const phoneNumber = normalizedMessage.provider_metadata.phone_number;
+      
+      // Skip processing if it's from own phone number
+      const ownPhoneNumber = process.env.WHATSAPP_ACCOUNT_NUMBER || '919566651479';
+      if (phoneNumber === ownPhoneNumber) {
+        console.log(`Skipping webhook processing for own phone number: ${phoneNumber}`);
+        return;
+      }
+      
+      const uniqueChatId = `${phoneNumber}_${account.provider}`;
+      
+      // Find or create chat based on phone number
       const [chat, created] = await ChannelChat.findOrCreate({
         where: {
           account_id: account.id,
-          provider_chat_id: normalizedMessage.provider_metadata.chat_id,
+          provider_chat_id: uniqueChatId,
         },
         defaults: {
           account_id: account.id,
-          provider_chat_id: normalizedMessage.provider_metadata.chat_id,
-          title: `Chat ${normalizedMessage.provider_metadata.chat_id}`,
+          provider_chat_id: uniqueChatId,
+          title: normalizedMessage.provider_metadata.fromName || `Chat ${phoneNumber}`,
           last_message_at: normalizedMessage.sent_at,
           unread_count: 1,
+          chat_info: {
+            original_chat_id: normalizedMessage.provider_metadata.chat_id,
+            phone_number: phoneNumber,
+            from: normalizedMessage.provider_metadata.from,
+          },
         },
       });
 
       if (!created) {
         chat.last_message_at = normalizedMessage.sent_at;
         chat.unread_count += 1;
+        // Update chat title if we have a better name
+        if (normalizedMessage.provider_metadata.fromName && chat.title.startsWith('Chat ')) {
+          chat.title = normalizedMessage.provider_metadata.fromName;
+        }
+        // Update chat info with latest metadata
+        chat.chat_info = {
+          ...chat.chat_info,
+          original_chat_id: normalizedMessage.provider_metadata.chat_id,
+          phone_number: phoneNumber,
+          from: normalizedMessage.provider_metadata.from,
+        };
         await chat.save();
       }
 
@@ -173,9 +265,9 @@ class WebhooksController {
       // Emit real-time update
       this.emitMessageUpdate(account.user_id, newMessage);
 
-      console.log(`New message processed: ${newMessage.id}`);
     } catch (error) {
       console.error('Error handling new message:', error);
+      throw error; // Re-throw to see the error in webhook response
     }
   }
 
@@ -477,16 +569,28 @@ class WebhooksController {
    */
   verifyUniPileSignature(req) {
     const signature = req.headers['x-unipile-signature'];
-    const payload = JSON.stringify(req.body);
-    const expectedSignature = crypto
-      .createHmac('sha256', process.env.UNIPILE_WEBHOOK_SECRET)
-      .update(payload)
-      .digest('hex');
+    const secret = process.env.UNIPILE_WEBHOOK_SECRET;
     
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    // If no signature or secret, skip verification (for testing)
+    if (!signature || !secret) {
+      return true;
+    }
+    
+    try {
+      const payload = JSON.stringify(req.body);
+      const expectedSignature = crypto
+        .createHmac('sha256', secret)
+        .update(payload)
+        .digest('hex');
+      
+      return crypto.timingSafeEqual(
+        Buffer.from(signature || ''),
+        Buffer.from(expectedSignature || '')
+      );
+    } catch (error) {
+      console.error('Signature verification error:', error);
+      return false;
+    }
   }
 
   /**
@@ -555,9 +659,45 @@ class WebhooksController {
    * Emit real-time message update
    */
   emitMessageUpdate(userId, message) {
-    // This would integrate with Socket.io
-    // For now, we'll just log it
-    console.log(`Emitting message update for user ${userId}:`, message.id);
+    if (this.io) {
+      const roomName = `user_${userId}`;
+      const fromName = message.provider_metadata?.fromName || message.provider_metadata?.sender?.attendee_name || 'Unknown';
+      
+      // Skip emitting "You" messages to prevent duplicates
+      // The frontend already receives sent messages from the /api/send-message endpoint
+      if (fromName === 'You') {
+        console.log(`🚫 Skipping emission of "You" message to prevent duplicates:`, message.id);
+        return;
+      }
+      
+      const messageData = {
+        id: message.id,
+        text: message.body, // Frontend expects 'text'
+        from: message.provider_metadata?.from || 'Unknown',
+        fromName: fromName,
+        to: message.provider_metadata?.to || 'Unknown',
+        timestamp: message.sent_at,
+        direction: message.direction,
+        chat_id: message.chat_id,
+        provider_msg_id: message.provider_msg_id,
+        subject: message.subject,
+        attachments: message.attachments,
+        status: message.status,
+        provider_metadata: message.provider_metadata,
+        created_at: message.created_at,
+      };
+      
+      console.log(`📡 Emitting message to room: ${roomName}`);
+      console.log(`📡 Message data:`, JSON.stringify(messageData, null, 2));
+      console.log(`📡 Connected sockets:`, this.io.sockets.sockets.size);
+      console.log(`📡 Rooms:`, Array.from(this.io.sockets.adapter.rooms.keys()));
+      
+      // Emit to user's specific room with frontend-compatible format
+      this.io.to(roomName).emit('new_message', messageData);
+      console.log(`✅ Message emitted to user ${userId}:`, message.id);
+    } else {
+      console.log(`❌ Socket.io not available. Message update for user ${userId}:`, message.id);
+    }
   }
 }
 

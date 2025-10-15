@@ -137,7 +137,7 @@ const config = {
   // Socket.io Configuration
   socket: {
     cors: {
-      origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+      origin: 'http://localhost:3000', // Force override .env file
       methods: ['GET', 'POST'],
       credentials: true,
     },

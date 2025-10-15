@@ -7,6 +7,13 @@ export const store = configureStore({
     messages: messagesReducer,
     connection: connectionReducer,
   },
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware({
+      serializableCheck: {
+        ignoredActions: ['connection/setSocket', 'messages/setSocket'],
+        ignoredPaths: ['connection.socket', 'messages.socket'],
+      },
+    }),
 });
 
 export default store;

@@ -46,7 +46,7 @@ const ChannelMessage = sequelize.define('ChannelMessage', {
   
   // Message status
   status: {
-    type: DataTypes.ENUM('pending', 'sent', 'delivered', 'read', 'failed'),
+    type: DataTypes.ENUM('pending', 'sent', 'delivered', 'read', 'failed', 'received'),
     defaultValue: 'pending',
   },
   read_at: {

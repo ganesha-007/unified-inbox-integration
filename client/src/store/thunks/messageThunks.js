@@ -12,13 +12,46 @@ export const loadMessages = createAsyncThunk(
       // Load from backend
       const backendMessages = await messageService.loadMessages();
       
+      // Transform backend messages to frontend format and filter out test messages
+      const transformedBackendMessages = backendMessages
+        .map(backendMsg => ({
+          id: backendMsg.id,
+          text: backendMsg.body,
+          from: backendMsg.provider_metadata?.from || backendMsg.chat?.account?.connection_data?.phone_number || 'Unknown',
+          fromName: backendMsg.provider_metadata?.fromName || backendMsg.chat?.title || 'Unknown',
+          to: backendMsg.provider_metadata?.to || backendMsg.chat?.provider_chat_id || 'Unknown',
+          timestamp: backendMsg.sent_at,
+          direction: backendMsg.direction,
+          replyTo: null, // Not supported yet
+          chat_id: backendMsg.chat_id,
+          provider_msg_id: backendMsg.provider_msg_id,
+          status: backendMsg.status,
+          provider_metadata: backendMsg.provider_metadata,
+          created_at: backendMsg.createdAt
+        }))
+        .filter(msg => {
+          // Filter out test users and fake contacts
+          const fromName = msg.fromName || 'Unknown';
+          const isRealContact = fromName !== 'Unknown' && 
+                               fromName !== 'Test User' && 
+                               !fromName.startsWith('Chat ') &&
+                               !fromName.includes('test') &&
+                               !fromName.includes('Test') &&
+                               !fromName.includes('github') &&
+                               !fromName.includes('frontend') &&
+                               fromName.length > 2;
+          
+          // Keep messages from real contacts or outgoing messages
+          return isRealContact || msg.direction === 'out';
+        });
+      
       // Load from localStorage
       const localMessages = JSON.parse(localStorage.getItem('whatsapp_messages') || '[]');
       
       // Merge messages, prioritizing backend data
       const allMessages = [...localMessages];
-      backendMessages.forEach(backendMsg => {
-        const exists = allMessages.find(msg => msg.id === backendMsg.id);
+      transformedBackendMessages.forEach(backendMsg => {
+        const exists = allMessages.find(msg => msg.id === backendMsg.id || msg.provider_msg_id === backendMsg.provider_msg_id);
         if (!exists) {
           allMessages.push(backendMsg);
         }

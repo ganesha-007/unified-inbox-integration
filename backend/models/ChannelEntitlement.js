@@ -1,4 +1,4 @@
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 
 const ChannelEntitlement = sequelize.define('ChannelEntitlement', {
@@ -26,33 +26,28 @@ const ChannelEntitlement = sequelize.define('ChannelEntitlement', {
   source: {
     type: DataTypes.ENUM('plan', 'addon'),
     allowNull: false,
-    comment: 'Whether this entitlement comes from a plan or add-on',
   },
   expires_at: {
     type: DataTypes.DATE,
     allowNull: true,
-    comment: 'When this entitlement expires (null for permanent)',
   },
   
   // Entitlement limits
   limits: {
     type: DataTypes.JSONB,
     defaultValue: {},
-    comment: 'Usage limits for this entitlement',
   },
   
   // Billing information
   billing_info: {
     type: DataTypes.JSONB,
     defaultValue: {},
-    comment: 'Stripe subscription ID, product ID, etc.',
   },
   
   // Metadata
   metadata: {
     type: DataTypes.JSONB,
     defaultValue: {},
-    comment: 'Additional entitlement metadata',
   },
 }, {
   tableName: 'channels_entitlement',
@@ -106,9 +101,9 @@ ChannelEntitlement.findActiveByUser = function(userId) {
     where: { 
       user_id: userId, 
       is_active: true,
-      [sequelize.Op.or]: [
+      [Op.or]: [
         { expires_at: null },
-        { expires_at: { [sequelize.Op.gt]: new Date() } }
+        { expires_at: { [Op.gt]: new Date() } }
       ]
     },
     include: ['user'],

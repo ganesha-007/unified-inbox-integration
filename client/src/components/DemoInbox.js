@@ -16,8 +16,12 @@ const DemoInbox = () => {
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    // Connect to Socket.io
-    const newSocket = io('http://localhost:5001');
+    // Connect to Socket.io with authentication
+    const newSocket = io('http://localhost:5001', {
+      auth: {
+        token: null // No token for testing
+      }
+    });
     setSocket(newSocket);
 
     newSocket.on('connect', () => {

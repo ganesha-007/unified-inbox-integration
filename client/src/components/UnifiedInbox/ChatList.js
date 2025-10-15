@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { List, Avatar, Typography, Empty, Spin } from 'antd';
-import { MessageSquare, Mail, Instagram } from 'lucide-react';
+import { List, Avatar, Typography, Empty, Spin, Button } from 'antd';
+import { MessageSquare, Mail, Instagram, RefreshCw, Trash2 } from 'lucide-react';
 import { useConnections } from '../../hooks/useConnections';
+import { useDispatch } from 'react-redux';
+import { clearMessages } from '../../store/slices/messagesSlice';
 import './UnifiedInbox.css';
 
 const { Text } = Typography;
 
 const ChatList = ({ provider, selectedChat, onChatSelect }) => {
   const { connections } = useConnections();
+  const dispatch = useDispatch();
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -43,7 +46,7 @@ const ChatList = ({ provider, selectedChat, onChatSelect }) => {
     }
   };
 
-  const fetchChats = async () => {
+  const fetchChats = async (forceSync = false) => {
     if (providerConnections.length === 0) {
       setChats([]);
       return;
@@ -55,7 +58,20 @@ const ChatList = ({ provider, selectedChat, onChatSelect }) => {
       
       for (const connection of providerConnections) {
         try {
-          const response = await fetch(`/api/channels/${provider}/${connection.id}/chats`);
+          let response;
+          if (forceSync) {
+            // Force sync from provider
+            response = await fetch(`/api/channels/${provider}/${connection.id}/chats/sync`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+            });
+          } else {
+            // Get from local database
+            response = await fetch(`/api/channels/${provider}/${connection.id}/chats`);
+          }
+          
           const data = await response.json();
           
           if (data.chats) {
@@ -82,6 +98,15 @@ const ChatList = ({ provider, selectedChat, onChatSelect }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefresh = () => {
+    fetchChats(true); // Force sync
+  };
+
+  const handleClearCache = () => {
+    dispatch(clearMessages());
+    fetchChats(true); // Force refresh after clearing cache
   };
 
   useEffect(() => {
@@ -134,6 +159,27 @@ const ChatList = ({ provider, selectedChat, onChatSelect }) => {
 
   return (
     <div className="chat-list">
+      <div style={{ padding: '8px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text strong>Chats</Text>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <Button 
+            type="text" 
+            icon={<RefreshCw size={14} />} 
+            onClick={handleRefresh}
+            loading={loading}
+            size="small"
+            title="Refresh chats from provider"
+          />
+          <Button 
+            type="text" 
+            icon={<Trash2 size={14} />} 
+            onClick={handleClearCache}
+            size="small"
+            title="Clear cache and refresh"
+            danger
+          />
+        </div>
+      </div>
       <List
         dataSource={chats}
         renderItem={(chat) => (

@@ -220,21 +220,74 @@ class UniPileService {
   }
 
   /**
+   * Extract phone number from contact information
+   */
+  extractPhoneNumber(from, fromName) {
+    // Try to extract phone number from 'from' field
+    if (from && typeof from === 'string') {
+      // Remove common prefixes and extract just the number
+      const phoneNumber = from.replace(/^whatsapp:/, '').replace(/^\+/, '').replace(/\D/g, '');
+      if (phoneNumber && phoneNumber.length >= 10) {
+        return phoneNumber;
+      }
+    }
+    
+    // If no phone number found, return the original from or fromName
+    return from || fromName || 'unknown';
+  }
+
+  parseTimestamp(timestamp) {
+    if (!timestamp) {
+      return new Date();
+    }
+    
+    // If it's already a Date object, return it
+    if (timestamp instanceof Date) {
+      return timestamp;
+    }
+    
+    // Try to parse the timestamp
+    const date = new Date(timestamp);
+    
+    // Check if the date is valid
+    if (isNaN(date.getTime())) {
+      console.warn(`Invalid timestamp: ${timestamp}, using current time`);
+      return new Date();
+    }
+    
+    return date;
+  }
+
+  /**
    * Normalize message data from UniPile
    */
   normalizeMessage(unipileMessage, provider) {
+    // Determine direction - if sender is "You", it's an outgoing message
+    let direction = unipileMessage.direction || 'in';
+    if (unipileMessage.sender?.attendee_name === 'You' || unipileMessage.fromName === 'You') {
+      direction = 'out';
+    }
+    
+    // Extract phone number for unique chat identification
+    const phoneNumber = this.extractPhoneNumber(unipileMessage.from, unipileMessage.fromName);
+    
     return {
       id: unipileMessage.id,
       provider,
-      direction: unipileMessage.direction || 'in',
+      direction: direction,
       body: unipileMessage.content?.text || unipileMessage.body || '',
       subject: unipileMessage.subject || null,
       attachments: unipileMessage.attachments || [],
-      sent_at: new Date(unipileMessage.timestamp || unipileMessage.sent_at),
+      sent_at: this.parseTimestamp(unipileMessage.timestamp || unipileMessage.sent_at),
       provider_msg_id: unipileMessage.id,
       provider_metadata: {
         chat_id: unipileMessage.chat_id,
         message_type: unipileMessage.type,
+        from: unipileMessage.from,
+        fromName: unipileMessage.fromName || unipileMessage.sender?.attendee_name || 'Unknown',
+        to: unipileMessage.to,
+        sender: unipileMessage.sender,
+        phone_number: phoneNumber, // Add phone number for unique identification
         ...unipileMessage.metadata,
       },
     };
