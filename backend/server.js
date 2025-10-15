@@ -99,6 +99,12 @@ io.on('connection', (socket) => {
   socket.join(`user_${socket.userId}`);
   console.log(`🔌 User ${socket.userId} joined room: user_${socket.userId}`);
   
+  // Handle manual room joining (for frontend compatibility)
+  socket.on('join_room', (roomName) => {
+    socket.join(roomName);
+    console.log(`🔌 Socket ${socket.id} joined room: ${roomName}`);
+  });
+  
   // Handle message sending
   socket.on('send_message', async (data) => {
     try {
@@ -618,7 +624,7 @@ app.post('/api/send-message', async (req, res) => {
     // Find the WhatsApp account
     const account = await ChannelAccount.findOne({
       where: { 
-        user_id: '2685891d-cdca-4645-bb87-7bd61541ab06',
+        user_id: 'e82f8560-e0ac-4de1-9c2d-039541a94a97',
         provider: 'whatsapp'
       }
     });
@@ -696,7 +702,7 @@ app.post('/api/send-message', async (req, res) => {
     
     // Emit sent message to frontend so user can see their own messages in the conversation
     if (io) {
-      io.to(`user_2685891d-cdca-4645-bb87-7bd61541ab06`).emit('new_message', {
+      io.to(`user_e82f8560-e0ac-4de1-9c2d-039541a94a97`).emit('new_message', {
         id: message.id,
         text: message.body,
         from: message.provider_metadata.from,

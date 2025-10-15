@@ -39,6 +39,12 @@ const WhatsAppInbox = () => {
     socket.on('connect', () => {
       console.log('✅ Socket.io connected successfully!', socket.id);
       dispatch(setConnectionStatus(true));
+      
+      // Join user-specific room for receiving messages
+      // Using the default user ID from the backend
+      const userId = 'e82f8560-e0ac-4de1-9c2d-039541a94a97';
+      socket.emit('join_room', `user_${userId}`);
+      console.log('🏠 Joined user room:', `user_${userId}`);
     });
 
     socket.on('disconnect', () => {
